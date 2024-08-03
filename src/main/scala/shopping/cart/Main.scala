@@ -9,7 +9,7 @@ import scala.util.control.NonFatal
 
 object Main {
 
-  val logger = LoggerFactory.getLogger("shopping.cart.Main")
+  private val logger = LoggerFactory.getLogger("shopping.cart.Main")
 
   def main(args: Array[String]): Unit = {
     val system = ActorSystem[Nothing](Behaviors.empty, "shopping-cart-service")
@@ -25,6 +25,10 @@ object Main {
   def init(system: ActorSystem[_]): Unit = {
     AkkaManagement(system).start()
     ClusterBootstrap(system).start()
-  }
 
+    val grpcInterface = system.settings.config.getString("shopping-cart-service.grpc.interface")
+    val grpcPort = system.settings.config.getInt("shopping-cart-service.grpc.port")
+    val grpcSerivce = new ShoppingCartServiceImpl
+    ShoppingCartServer.start(grpcInterface, grpcPort, system, grpcSerivce)
+  }
 }
