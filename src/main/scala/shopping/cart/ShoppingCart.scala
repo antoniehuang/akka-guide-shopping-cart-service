@@ -1,9 +1,13 @@
 package shopping.cart
 
-import akka.actor.typed.ActorRef
+import akka.actor.typed.{ActorRef, ActorSystem, Behavior, SupervisorStrategy}
+import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity, EntityTypeKey}
 import akka.pattern.StatusReply
-import akka.persistence.typed.scaladsl.{Effect, ReplyEffect}
+import akka.persistence.typed.PersistenceId
+import akka.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, ReplyEffect, RetentionCriteria}
 import akka.serialization.jackson.CborSerializable
+
+import scala.concurrent.duration.DurationInt
 
 object ShoppingCart {
 
@@ -55,6 +59,40 @@ object ShoppingCart {
             .persist(ItemAdded(cartId, itemId, quantity))
             .thenReply(replyTo) { updatedCart => StatusReply.Success(Summary(updatedCart.items))}
     }
+  }
+
+  private def handleEvent(state: State, event: Event): State = {
+    event match {
+      case ItemAdded(_, itemId, quantity) =>
+        state.updateItem(itemId, quantity)
+    }
+  }
+
+  val EntityKey: EntityTypeKey[Command] =
+    EntityTypeKey[Command]("ShoppingCart")
+
+  def init(system: ActorSystem[_]): Unit = {
+    ClusterSharding(system).init(
+      Entity(EntityKey)(entityContext =>
+        ShoppingCart(entityContext.entityId))
+    )
+  }
+
+  def apply(cartId: String): Behavior[Command] = {
+    EventSourcedBehavior
+      .withEnforcedReplies[Command, Event, State](
+        persistenceId = PersistenceId(EntityKey.name, cartId),
+        emptyState = State.empty,
+        commandHandler =
+          (state, command) => handleCommand(cartId, state, command),
+        eventHandler = (state, event) => handleEvent(state, event)
+      )
+      .withRetention(
+        RetentionCriteria.snapshotEvery(numberOfEvents = 100)
+      )
+      .onPersistFailure(
+        SupervisorStrategy.restartWithBackoff(200.millis, 5.seconds, 0.1)
+      )
   }
 }
 
