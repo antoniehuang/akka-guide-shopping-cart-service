@@ -2,6 +2,7 @@ package shopping.cart
 
 import akka.actor.typed.ActorRef
 import akka.pattern.StatusReply
+import akka.persistence.typed.scaladsl.{Effect, ReplyEffect}
 import akka.serialization.jackson.CborSerializable
 
 object ShoppingCart {
@@ -40,6 +41,20 @@ object ShoppingCart {
   object State {
     val empty =
       State(items = Map.empty)
+  }
+
+  private def handleCommand(cartId: String, state: State, command: Command): ReplyEffect[Event, State] = {
+    command match {
+      case AddItem(itemId, quantity, replyTo) =>
+        if (state.hasItem(itemId))
+          Effect.reply(replyTo)(StatusReply.Error(s"Item '$itemId' was already added to this shopping cart"))
+        else if (quantity <= 0)
+          Effect.reply(replyTo)(StatusReply.Error("Quantity must be greater than zero"))
+        else
+          Effect
+            .persist(ItemAdded(cartId, itemId, quantity))
+            .thenReply(replyTo) { updatedCart => StatusReply.Success(Summary(updatedCart.items))}
+    }
   }
 }
 
