@@ -43,7 +43,7 @@ object ShoppingCart {
     }
   }
   object State {
-    val empty =
+    val empty: State =
       State(items = Map.empty)
   }
 
